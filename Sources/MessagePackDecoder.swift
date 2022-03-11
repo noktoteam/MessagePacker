@@ -13,6 +13,17 @@ open class MessagePackDecoder: Decoder {
     public var userInfo: [CodingUserInfoKey : Any] = [:]
     private var storage = MessagePackStorage()
 
+  private let fractionalISODecoder: ISO8601DateFormatter = {
+    let decoder = ISO8601DateFormatter.init()
+    decoder.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return decoder
+  }()
+  private let wholeISODecoder: ISO8601DateFormatter = {
+    let decoder = ISO8601DateFormatter.init()
+    decoder.formatOptions = [.withInternetDateTime]
+    return decoder
+  }()
+
     public init() {}
 
     public init(referencing: Data, codingPath: [CodingKey] = []) {
@@ -113,7 +124,19 @@ private extension MessagePackDecoder {
         case let type where type == Data.self || type == NSData.self:
             return try unboxMessagePack(value, as: Data.self) as! T
         case let type where type == Date.self || type == NSDate.self:
-            return try unboxMessagePack(value, as: Date.self) as! T
+            let rawValue = try unboxMessagePack(value, as: String.self)
+            if let parsed = fractionalISODecoder.date(from: rawValue) {
+                return parsed as! T
+            } else if let parsed = wholeISODecoder.date(from: rawValue) {
+                return parsed as! T
+            } else {
+                throw DecodingError.dataCorrupted(
+                        DecodingError.Context(
+                                codingPath: codingPath,
+                                debugDescription: "Invalid date string."
+                        )
+                )
+            }
         case let type where type == URL.self || type == NSURL.self:
             return try unboxURL(value) as! T
         default:
